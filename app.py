@@ -43,3 +43,18 @@ if archivo is not None:
 
     except Exception as e:
         st.error(f"Error al leer el archivo: {e}")
+import plotly.express as px
+
+st.subheader("Ingresos por región")
+if "Region" in df.columns and "Ingresos" in df.columns:
+    resumen_region = df.groupby("Region")["Ingresos"].sum().reset_index()
+    fig1 = px.bar(resumen_region, x="Region", y="Ingresos", 
+                   title="Ingresos totales por región")
+    st.plotly_chart(fig1, use_container_width=True)
+
+st.subheader("Ingresos por producto")
+if "Tipo Producto" in df.columns and "Ingresos" in df.columns:
+    resumen_producto = df.groupby("Tipo Producto")["Ingresos"].sum().reset_index()
+    fig2 = px.bar(resumen_producto, x="Tipo Producto", y="Ingresos",
+                   title="Ingresos totales por tipo de producto")
+    st.plotly_chart(fig2, use_container_width=True)
