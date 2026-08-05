@@ -28,6 +28,16 @@ if archivo is not None:
 
         st.subheader("Vista previa")
         st.dataframe(df, use_container_width=True)
+                 
+        st.subheader("Filtros")
+
+        if "Region" in df.columns:
+            regiones = st.multiselect("Selecciona región(es)",
+                                        options=df["Region"].unique(),
+                                        default=df["Region"].unique())
+            df = df[df["Region"].isin(regiones)]
+
+       
 
         st.subheader("KPIs automáticos")
 
@@ -58,3 +68,31 @@ if "Tipo Producto" in df.columns and "Ingresos" in df.columns:
     fig2 = px.bar(resumen_producto, x="Tipo Producto", y="Ingresos",
                    title="Ingresos totales por tipo de producto")
     st.plotly_chart(fig2, use_container_width=True)
+st.subheader("Resumen automático")
+
+resumen_texto = []
+
+if "Ingresos" in kpis:
+    ingresos_total = kpis["Ingresos"]["total"]
+    ingresos_media = kpis["Ingresos"]["media"]
+    resumen_texto.append(f"Los ingresos totales ascienden a {ingresos_total:,.2f}, con una media de {ingresos_media:,.2f} por registro.")
+
+if "Gastos" in kpis:
+    gastos_total = kpis["Gastos"]["total"]
+    resumen_texto.append(f"Los gastos totales son de {gastos_total:,.2f}.")
+
+if "Ingresos" in kpis and "Gastos" in kpis:
+    beneficio = kpis["Ingresos"]["total"] - kpis["Gastos"]["total"]
+    margen = (beneficio / kpis["Ingresos"]["total"]) * 100 if kpis["Ingresos"]["total"] > 0 else 0
+    resumen_texto.append(f"El beneficio estimado es de {beneficio:,.2f}, lo que representa un margen del {margen:.1f}%.")
+
+if "Region" in df.columns and "Ingresos" in df.columns:
+    top_region = df.groupby("Region")["Ingresos"].sum().idxmax()
+    resumen_texto.append(f"La región con mayores ingresos es {top_region}.")
+
+if "Tipo Producto" in df.columns and "Ingresos" in df.columns:
+    top_producto = df.groupby("Tipo Producto")["Ingresos"].sum().idxmax()
+    resumen_texto.append(f"El producto más rentable es {top_producto}.")
+
+for linea in resumen_texto:
+    st.write("• " + linea)
