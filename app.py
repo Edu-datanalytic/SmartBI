@@ -125,3 +125,33 @@ if alertas:
         st.warning(alerta)
 else:
     st.info("✅ No se detectaron anomalías significativas en los datos.")
+st.subheader("Alertas y anomalías")
+
+alertas = []
+
+if "Region" in df.columns and "Tipo Producto" in df.columns:
+    for col in ["Ingresos", "Gastos"]:
+        if col in df.columns:
+            total_anomalias = 0
+            
+            grupos = df.groupby(["Region", "Tipo Producto"])
+            
+            for (region, producto), subset in grupos:
+                if len(subset) >= 3:
+                    media = subset[col].mean()
+                    std = subset[col].std()
+                    
+                    if std > 0:
+                        limite_superior = media + 2.5 * std
+                        limite_inferior = media - 2.5 * std
+                        anomalias = subset[(subset[col] > limite_superior) | (subset[col] < limite_inferior)]
+                        total_anomalias += len(anomalias)
+            
+            if total_anomalias > 0:
+                alertas.append(f"⚠️ Se detectaron {total_anomalias} valores atípicos en '{col}' (comparado dentro de cada región y producto).")
+
+if alertas:
+    for alerta in alertas:
+        st.warning(alerta)
+else:
+    st.info("✅ No se detectaron anomalías significativas en los datos.")
