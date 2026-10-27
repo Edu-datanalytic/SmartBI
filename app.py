@@ -16,8 +16,11 @@ archivo = st.file_uploader(
     type=["csv", "xlsx"]
 )
 
+if archivo is None:
+    st.info("👆 Sube un archivo CSV o Excel para empezar.")
+    st.stop()
+    
 if archivo is not None:
-
     try:
         if archivo.name.endswith(".csv"):
             df = pd.read_csv(archivo)
@@ -101,34 +104,6 @@ st.subheader("Alertas y anomalías")
 
 alertas = []
 
-if "Region" in df.columns:
-    for col in ["Ingresos", "Gastos"]:
-        if col in df.columns:
-            total_anomalias = 0
-            
-            for region in df["Region"].unique():
-                subset = df[df["Region"] == region]
-                media = subset[col].mean()
-                std = subset[col].std()
-                
-                if std > 0:
-                    limite_superior = media + 2 * std
-                    limite_inferior = media - 2 * std
-                    anomalias = subset[(subset[col] > limite_superior) | (subset[col] < limite_inferior)]
-                    total_anomalias += len(anomalias)
-            
-            if total_anomalias > 0:
-                alertas.append(f"⚠️ Se detectaron {total_anomalias} valores atípicos en '{col}' (comparado dentro de cada región).")
-
-if alertas:
-    for alerta in alertas:
-        st.warning(alerta)
-else:
-    st.info("✅ No se detectaron anomalías significativas en los datos.")
-st.subheader("Alertas y anomalías")
-
-alertas = []
-
 if "Region" in df.columns and "Tipo Producto" in df.columns:
     for col in ["Ingresos", "Gastos"]:
         if col in df.columns:
@@ -149,9 +124,83 @@ if "Region" in df.columns and "Tipo Producto" in df.columns:
             
             if total_anomalias > 0:
                 alertas.append(f"⚠️ Se detectaron {total_anomalias} valores atípicos en '{col}' (comparado dentro de cada región y producto).")
+if not ("Region" in df.columns and "Tipo Producto" in df.columns):
+    col_fecha = next((c for c in df.columns if str(c).lower() in ["date", "fecha"]), None)
+    col_valor = next((c for c in df.columns if str(c).lower() in ["sales", "ventas", "ingresos"]), None)
 
+    if col_valor is not None:
+        serie = df.copy()
+        serie[col_valor] = pd.to_numeric(serie[col_valor], errors="coerce")
+        serie = serie.dropna(subset=[col_valor])
+
+        if len(serie) >= 10:
+            media = serie[col_valor].mean()
+            std = serie[col_valor].std()
+
+            if std > 0:
+                serie["z"] = (serie[col_valor] - media) / std
+                atipicos = serie[serie["z"].abs() > 2.5]
+                if len(atipicos) > 0:               
+                    atipicos = atipicos.reindex(atipicos["z"].abs().sort_values(ascending=False).index)
+                    mayor = atipicos.iloc[0]
+                    fecha_mayor = mayor[col_fecha] if col_fecha else "sin fecha"
+                    alertas.append(
+                        f"📊 Resumen: se detectaron {len(atipicos)} días atípicos sobre {len(serie)}. "
+                        f"El más extremo es {fecha_mayor}, con ventas de {mayor[col_valor]:,.2f}."
+                    )
+
+                for _, fila in atipicos.iterrows():
+                    fecha = fila[col_fecha] if col_fecha else "sin fecha"
+                    tipo = "por encima" if fila["z"] > 0 else "por debajo"
+                    alertas.append(
+                        f"⚠️ {fecha}: ventas de {fila[col_valor]:,.2f}, "
+                        f"{tipo} de lo habitual (media {media:,.2f}). "
+                        f"Se aleja {abs(fila['z']):.1f} desviaciones estándar. "
+                        f"Conviene revisar si es un dato correcto."
+                    )
+            if col_fecha:       
+                    serie[col_fecha] = pd.to_datetime(serie[col_fecha], errors="coerce")
+                    atipicos = serie[serie["z"].abs() > 2.5]
+                    fig_anom = px.line(
+                        serie, x=col_fecha, y=col_valor,
+                        title="Ventas por día y días atípicos"
+                    )
+                    fig_anom.add_scatter(
+                        x=atipicos[col_fecha], y=atipicos[col_valor],
+                        mode="markers", name="Anomalías",
+                        marker=dict(color="red", size=10)
+                    )
+                    st.plotly_chart(fig_anom, width="stretch")                 
 if alertas:
     for alerta in alertas:
         st.warning(alerta)
 else:
     st.info("✅ No se detectaron anomalías significativas en los datos.")
+
+from fpdf import FPDF
+st.subheader("Exportar informe")
+
+if st.button("Generar informe PDF"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Informe SmartBI", ln=True)
+    
+    pdf.set_font("Arial", "", 12)
+    pdf.ln(5)
+    pdf.cell(0, 10, "Resumen ejecutivo:", ln=True)
+    
+    pdf.set_font("Arial", "", 10)
+    for linea in resumen_texto:
+        linea_limpia = linea.encode('latin-1', 'ignore').decode('latin-1')
+        pdf.multi_cell(0, 8, linea_limpia)
+    
+    pdf.output("informe_smartbi.pdf")
+    
+    with open("informe_smartbi.pdf", "rb") as f:
+        st.download_button(
+            label="Descargar PDF",
+            data=f,
+            file_name="informe_smartbi.pdf",
+            mime="application/pdf"
+        )
