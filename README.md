@@ -31,6 +31,20 @@ SmartBI analiza archivos CSV o Excel y detecta automáticamente los días con ve
 
 > Una anomalía estadística no significa necesariamente un error: indica un dato que conviene revisar.
 
+## 📊 KPIs, gráficos y resumen automático
+
+![Ingresos por producto](demo_productos.PNG)
+
+![Top 10 regiones por ingresos](demo_regiones.PNG)
+
+Con archivos que incluyen región, producto, ingresos y gastos, SmartBI calcula automáticamente:
+
+- KPIs de ingresos y gastos con formato en euros
+- Gráficos de ingresos por región (Top 10) y por tipo de producto
+- Un resumen en texto con ingresos, gastos, beneficio estimado, margen, región y producto principales
+- Alertas de valores atípicos dentro de cada región y producto
+- Informe en PDF descargable con el resumen y las alertas
+
 ## Autor
 Eduardo · Analista de Datos Junior · Madrid
 
