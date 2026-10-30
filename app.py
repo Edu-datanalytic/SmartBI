@@ -8,7 +8,24 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
-
+def detalle_anomalias(df, col, n=5):
+    filas = []
+    for (region, producto), subset in df.groupby(["Region", "Tipo Producto"]):
+        if len(subset) >= 3:
+            media = subset[col].mean()
+            std = subset[col].std()
+            if std > 0:
+                for valor in subset[col]:
+                    z = (valor - media) / std
+                    if abs(z) > 2.5:
+                        filas.append((abs(z), region, producto, valor, media))
+    lineas = []
+    for z, region, producto, valor, media in sorted(filas, reverse=True)[:n]:
+        lineas.append(
+            f"   • {region} / {producto}: {col} de {fmt(valor)} frente a {fmt(media)} habitual "
+            f"({f'{z:.1f}'.replace('.', ',')} desviaciones estándar)."
+        )
+    return lineas
 st.title("📊 SmartBI")
 st.write("Análisis automático de datos para PYMEs")
 
@@ -173,6 +190,7 @@ if "Region" in df.columns and "Tipo Producto" in df.columns:
             
             if total_anomalias > 0:
                 alertas.append(f"⚠️ Se detectaron {total_anomalias} valores atípicos en '{col}' (comparado dentro de cada región y producto).")
+                alertas.extend(detalle_anomalias(df, col))
 if not ("Region" in df.columns and "Tipo Producto" in df.columns):
     col_fecha = next((c for c in df.columns if str(c).lower() in ["date", "fecha"]), None)
     col_valor = next((c for c in df.columns if str(c).lower() in ["sales", "ventas", "ingresos"]), None)
@@ -237,11 +255,11 @@ if st.button("Generar informe PDF"):
     
     pdf.set_font("Arial", "", 12)
     pdf.ln(5)
-    pdf.cell(0, 10, "Resumen ejecutivo:", ln=True)
+    pdf.cell(0, 10, "Resumen ejecutivo:" if resumen_texto else "", ln=True)
     
     pdf.set_font("Arial", "", 10)
     for linea in resumen_texto:
-        linea_limpia = linea.encode('latin-1', 'ignore').decode('latin-1')
+        linea_limpia = linea.replace("€", "EUR").encode('latin-1', 'ignore').decode('latin-1')
         pdf.multi_cell(0, 8, linea_limpia, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)    
     pdf.set_font("Arial", "B", 12)
@@ -249,7 +267,7 @@ if st.button("Generar informe PDF"):
     pdf.set_font("Arial", "", 10)
     if alertas:
         for alerta in alertas:
-            alerta_limpia = alerta.encode("latin-1", "ignore").decode("latin-1")
+            alerta_limpia = alerta.replace("€", "EUR").encode("latin-1", "ignore").decode("latin-1")
             pdf.multi_cell(0, 8, alerta_limpia, new_x="LMARGIN", new_y="NEXT")
     else:
         pdf.multi_cell(0, 8, "No se detectaron anomalias significativas.", new_x="LMARGIN", new_y="NEXT")
