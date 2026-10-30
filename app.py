@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 from kpi_engine import calcular_kpis
-
+def fmt(x):
+      return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 st.set_page_config(
     page_title="SmartBI",
     page_icon="📊",
@@ -30,7 +31,7 @@ if archivo is not None:
         st.success("✅ Archivo cargado correctamente")
 
         st.subheader("Vista previa")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df.dropna(axis=1, how="all").style.format({c: fmt for c in ["Ingresos", "Gastos"] if c in df.columns}), width="stretch")
                  
         st.subheader("Filtros")
 
@@ -43,51 +44,99 @@ if archivo is not None:
        
 
         st.subheader("KPIs automáticos")
-
         kpis = calcular_kpis(df)
+        kpis = {k: v for k, v in kpis.items() if v["total"] != 0}
+
+          
 
         columnas = st.columns(len(kpis))
 
         for i, (col, valores) in enumerate(kpis.items()):
             columnas[i].metric(
                 label=f"{col} (Total)",
-                value=round(valores["total"], 2)
+                value=f"{valores['total']:,.0f}".replace(",",".") + " €"
             )
 
     except Exception as e:
         st.error(f"Error al leer el archivo: {e}")
 import plotly.express as px
 
+
 st.subheader("Ingresos por región")
 if "Region" in df.columns and "Ingresos" in df.columns:
-    resumen_region = df.groupby("Region")["Ingresos"].sum().reset_index()
-    fig1 = px.bar(resumen_region, x="Region", y="Ingresos", 
-                   title="Ingresos totales por región")
-    st.plotly_chart(fig1, use_container_width=True)
+    resumen_region = df.groupby("Region")["Ingresos"].sum().nlargest(10).reset_index()
+
+    fig1 = px.bar(
+        resumen_region,
+        x="Region",
+        y="Ingresos",
+        title="Top 10 regiones por ingresos",
+        labels={"Region": "Región", "Ingresos": "Ingresos (€)"}
+    )
+
+    fig1.update_yaxes(
+    tickmode="array",
+    tickvals=[0, 200_000_000, 400_000_000, 600_000_000,
+              800_000_000, 1_000_000_000, 1_200_000_000],
+    ticktext=["0", "200 M€", "400 M€", "600 M€",
+              "800 M€", "1.000 M€", "1.200 M€"]
+)
+    fig1.update_traces(
+        hovertemplate="Región: %{x}<br>Ingresos: %{y:,.2f} €<extra></extra>"
+    )
+
+    st.plotly_chart(fig1, width="stretch")
+
 
 st.subheader("Ingresos por producto")
 if "Tipo Producto" in df.columns and "Ingresos" in df.columns:
     resumen_producto = df.groupby("Tipo Producto")["Ingresos"].sum().reset_index()
-    fig2 = px.bar(resumen_producto, x="Tipo Producto", y="Ingresos",
-                   title="Ingresos totales por tipo de producto")
-    st.plotly_chart(fig2, use_container_width=True)
+
+    fig2 = px.bar(
+        resumen_producto,
+        x="Tipo Producto",
+        y="Ingresos",
+        title="Ingresos totales por tipo de producto",
+        labels={
+            "Tipo Producto": "Tipo de producto",
+            "Ingresos": "Ingresos (€)"
+        }
+    )
+
+    
+fig2.update_yaxes(
+    tickmode="array",
+    tickvals=[0, 200_000_000, 400_000_000, 600_000_000,
+              800_000_000, 1_000_000_000, 1_200_000_000],
+    ticktext=["0", "200 M€", "400 M€", "600 M€",
+              "800 M€", "1.000 M€", "1.200 M€"]
+)
+
+fig2.update_traces(    
+        hovertemplate="Producto: %{x}<br>Ingresos: %{y:,.2f} €<extra></extra>"
+    )
+
+st.plotly_chart(fig2, width="stretch")    
+
+
 st.subheader("Resumen automático")
+
 
 resumen_texto = []
 
 if "Ingresos" in kpis:
     ingresos_total = kpis["Ingresos"]["total"]
     ingresos_media = kpis["Ingresos"]["media"]
-    resumen_texto.append(f"Los ingresos totales ascienden a {ingresos_total:,.2f}, con una media de {ingresos_media:,.2f} por registro.")
+    resumen_texto.append(f"Los ingresos totales ascienden a {fmt(ingresos_total)}, con una media de {fmt(ingresos_media)} por registro.")
 
 if "Gastos" in kpis:
     gastos_total = kpis["Gastos"]["total"]
-    resumen_texto.append(f"Los gastos totales son de {gastos_total:,.2f}.")
+    resumen_texto.append(f"Los gastos totales son de {fmt(gastos_total)}.")
 
 if "Ingresos" in kpis and "Gastos" in kpis:
     beneficio = kpis["Ingresos"]["total"] - kpis["Gastos"]["total"]
     margen = (beneficio / kpis["Ingresos"]["total"]) * 100 if kpis["Ingresos"]["total"] > 0 else 0
-    resumen_texto.append(f"El beneficio estimado es de {beneficio:,.2f}, lo que representa un margen del {margen:.1f}%.")
+    resumen_texto.append(f"El beneficio estimado es de {fmt(beneficio)}, lo que representa un margen del {f'{margen:.1f}'.replace('.', ',')}%.")
 
 if "Region" in df.columns and "Ingresos" in df.columns:
     top_region = df.groupby("Region")["Ingresos"].sum().idxmax()
@@ -154,7 +203,7 @@ if not ("Region" in df.columns and "Tipo Producto" in df.columns):
                     tipo = "por encima" if fila["z"] > 0 else "por debajo"
                     alertas.append(
                         f"⚠️ {fecha}: ventas de {fila[col_valor]:,.2f}, "
-                        f"{tipo} de lo habitual (media {media:,.2f}). "
+                        f"{tipo} de lo habitual (media {fmt(media)}). "
                         f"Se aleja {abs(fila['z']):.1f} desviaciones estándar. "
                         f"Conviene revisar si es un dato correcto."
                     )
@@ -193,8 +242,17 @@ if st.button("Generar informe PDF"):
     pdf.set_font("Arial", "", 10)
     for linea in resumen_texto:
         linea_limpia = linea.encode('latin-1', 'ignore').decode('latin-1')
-        pdf.multi_cell(0, 8, linea_limpia)
-    
+        pdf.multi_cell(0, 8, linea_limpia, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)    
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "Alertas y anomalias:", ln=True)
+    pdf.set_font("Arial", "", 10)
+    if alertas:
+        for alerta in alertas:
+            alerta_limpia = alerta.encode("latin-1", "ignore").decode("latin-1")
+            pdf.multi_cell(0, 8, alerta_limpia, new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.multi_cell(0, 8, "No se detectaron anomalias significativas.", new_x="LMARGIN", new_y="NEXT")
     pdf.output("informe_smartbi.pdf")
     
     with open("informe_smartbi.pdf", "rb") as f:
