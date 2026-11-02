@@ -53,10 +53,10 @@ if archivo is not None:
         st.subheader("Filtros")
 
         if "Region" in df.columns:
-            regiones = st.multiselect("Selecciona región(es)",
+            regiones = st.multiselect("Filtrar por región (vacío = todas)",
                                         options=df["Region"].unique(),
-                                        default=df["Region"].unique())
-            df = df[df["Region"].isin(regiones)]
+                                        default=[])
+            df = df[df["Region"].isin(regiones)] if regiones else df
 
        
 
