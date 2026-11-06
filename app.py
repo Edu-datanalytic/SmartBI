@@ -1,6 +1,16 @@
 import streamlit as st
 import pandas as pd
 from kpi_engine import calcular_kpis
+def leer_csv(archivo):
+    import io
+    datos = archivo.getvalue()
+    try:
+        texto = datos.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texto = datos.decode("latin-1")
+    primera = texto.splitlines()[0] if texto else ""
+    sep = ";" if primera.count(";") > primera.count(",") else ","
+    return pd.read_csv(io.StringIO(texto), sep=sep, decimal="," if sep == ";" else ".")
 def fmt(x):
       return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 st.set_page_config(
@@ -40,19 +50,27 @@ if archivo is None:
     
 if archivo is not None:
     try:
-        if archivo.name.endswith(".csv"):
-            df = pd.read_csv(archivo)
-        else:
+       if archivo.name.endswith(".csv"):
+            df = leer_csv(archivo)
+       else:
             df = pd.read_excel(archivo)
+       for c in df.columns:
+            if df[c].dtype == object or pd.api.types.is_string_dtype(df[c]):
+                conv = pd.to_numeric(df[c], errors="coerce")
+                total = df[c].notna().sum()
+                if total > 0 and conv.notna().sum() >= 0.8 * total:
+                    ignoradas = total - conv.notna().sum()
+                    if ignoradas > 0:
+                        st.warning(f"⚠️ En '{c}' se ignoraron {ignoradas} valores que no son números (por ejemplo 'n/d').")
+                    df[c] = conv
+       st.success("✅ Archivo cargado correctamente")
 
-        st.success("✅ Archivo cargado correctamente")
-
-        st.subheader("Vista previa")
-        st.dataframe(df.dropna(axis=1, how="all").style.format({c: fmt for c in ["Ingresos", "Gastos"] if c in df.columns}), width="stretch")
+       st.subheader("Vista previa")
+       st.dataframe(df.dropna(axis=1, how="all").style.format(lambda x: fmt(x) if isinstance(x, float) else x, na_rep=""), width="stretch")
                  
-        st.subheader("Filtros")
+       st.subheader("Filtros")
 
-        if "Region" in df.columns:
+       if "Region" in df.columns:
             regiones = st.multiselect("Filtrar por región (vacío = todas)",
                                         options=df["Region"].unique(),
                                         default=[])
@@ -60,15 +78,15 @@ if archivo is not None:
 
        
 
-        st.subheader("KPIs automáticos")
-        kpis = calcular_kpis(df)
-        kpis = {k: v for k, v in kpis.items() if v["total"] != 0}
+       st.subheader("KPIs automáticos")
+       kpis = calcular_kpis(df)
+       kpis = {k: v for k, v in kpis.items() if v["total"] != 0}
 
           
 
-        columnas = st.columns(len(kpis))
+       columnas = st.columns(len(kpis))
 
-        for i, (col, valores) in enumerate(kpis.items()):
+       for i, (col, valores) in enumerate(kpis.items()):
             columnas[i].metric(
                 label=f"{col} (Total)",
                 value=f"{valores['total']:,.0f}".replace(",",".") + " €"
@@ -102,7 +120,7 @@ if "Region" in df.columns and "Ingresos" in df.columns:
         hovertemplate="Región: %{x}<br>Ingresos: %{y:,.2f} €<extra></extra>"
     )
 
-    st.plotly_chart(fig1, width="stretch")
+    st.plotly_chart(fig1.update_layout(separators=",."), width="stretch")
 
 
 st.subheader("Ingresos por producto")
@@ -121,7 +139,7 @@ if "Tipo Producto" in df.columns and "Ingresos" in df.columns:
     )
 
     
-fig2.update_yaxes(
+    fig2.update_yaxes(
     tickmode="array",
     tickvals=[0, 200_000_000, 400_000_000, 600_000_000,
               800_000_000, 1_000_000_000, 1_200_000_000],
@@ -129,11 +147,11 @@ fig2.update_yaxes(
               "800 M€", "1.000 M€", "1.200 M€"]
 )
 
-fig2.update_traces(    
+    fig2.update_traces(    
         hovertemplate="Producto: %{x}<br>Ingresos: %{y:,.2f} €<extra></extra>"
     )
 
-st.plotly_chart(fig2, width="stretch")    
+    st.plotly_chart(fig2.update_layout(separators=",."), width="stretch")    
 
 
 st.subheader("Resumen automático")
@@ -198,7 +216,7 @@ if not ("Region" in df.columns and "Tipo Producto" in df.columns):
     if col_valor is not None:
         serie = df.copy()
         serie[col_valor] = pd.to_numeric(serie[col_valor], errors="coerce")
-        serie = serie.dropna(subset=[col_valor])
+        serie = serie.groupby(col_fecha, as_index=False)[col_valor].sum() if col_fecha else serie
 
         if len(serie) >= 10:
             media = serie[col_valor].mean()
@@ -213,16 +231,16 @@ if not ("Region" in df.columns and "Tipo Producto" in df.columns):
                     fecha_mayor = mayor[col_fecha] if col_fecha else "sin fecha"
                     alertas.append(
                         f"📊 Resumen: se detectaron {len(atipicos)} días atípicos sobre {len(serie)}. "
-                        f"El más extremo es {fecha_mayor}, con ventas de {mayor[col_valor]:,.2f}."
+                        f"El más extremo es {fecha_mayor}, con ventas de {fmt(mayor[col_valor])}."
                     )
 
                 for _, fila in atipicos.iterrows():
                     fecha = fila[col_fecha] if col_fecha else "sin fecha"
                     tipo = "por encima" if fila["z"] > 0 else "por debajo"
                     alertas.append(
-                        f"⚠️ {fecha}: ventas de {fila[col_valor]:,.2f}, "
+                        f"⚠️ {fecha}: ventas de {fmt(fila[col_valor])}, "
                         f"{tipo} de lo habitual (media {fmt(media)}). "
-                        f"Se aleja {abs(fila['z']):.1f} desviaciones estándar. "
+                        f"Se aleja {str(round(abs(fila['z']), 1)).replace('.', ',')} desviaciones estándar. "
                         f"Conviene revisar si es un dato correcto."
                     )
             if col_fecha:       
@@ -237,7 +255,7 @@ if not ("Region" in df.columns and "Tipo Producto" in df.columns):
                         mode="markers", name="Anomalías",
                         marker=dict(color="red", size=10)
                     )
-                    st.plotly_chart(fig_anom, width="stretch")                 
+                    st.plotly_chart(fig_anom.update_layout(separators=",."), width="stretch")                 
 if alertas:
     for alerta in alertas:
         st.warning(alerta)
